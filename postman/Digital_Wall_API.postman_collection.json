@@ -1,0 +1,288 @@
+{
+  "info": {
+    "_postman_id": "a1b2c3d4-e5f6-7890-abcd-digwall000001",
+    "name": "Digital Wall API",
+    "description": "Digital Wall — message slot / completed / admin JWT APIs.\n\nFlow:\n1. POST /api/messages/slot (guest submit)\n2. WebSocket pushes to display clients\n3. POST /api/messages/completed when display finishes\n4. Admin login → view messages & stats\n\nDomain: digwall.ice-solution.hk",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "messageId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health",
+            "description": "Server health check."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "POST Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.token) {",
+                  "    pm.collectionVariables.set('token', data.token);",
+                  "  }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/login",
+            "description": "Admin JWT login. Token expires in 1d.\n\nOn success, saves `token` to collection variable."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Messages",
+      "item": [
+        {
+          "name": "POST Message Slot (Submit)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "  const data = pm.response.json();",
+                  "  if (data.message && data.message.id) {",
+                  "    pm.collectionVariables.set('messageId', data.message.id);",
+                  "  }",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Keith\",\n  \"sticker_id\": \"sticker_01\",\n  \"msg_id\": \"msg_hello\",\n  \"optional_id\": \"opt_1\"\n}"
+            },
+            "url": "{{baseUrl}}/api/messages/slot",
+            "description": "Guest submit. Creates message in slot, marks displaying, and broadcasts via WebSocket.\n\nRequired: name, sticker_id, msg_id\nOptional: optional_id\n\nSaves `messageId` for Completed request."
+          },
+          "response": []
+        },
+        {
+          "name": "GET Message Slot (Pending)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/messages/slot",
+            "description": "List messages with status slot or displaying (for display client bootstrap)."
+          },
+          "response": []
+        },
+        {
+          "name": "POST Message Completed",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{messageId}}\"\n}"
+            },
+            "url": "{{baseUrl}}/api/messages/completed",
+            "description": "Display client marks a message as completed after display finishes.\n\nUses collection variable `messageId` from Slot submit."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "GET Admin Stats",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/admin/stats",
+            "description": "Counts: slot, displaying, completed, total. Requires JWT."
+          },
+          "response": []
+        },
+        {
+          "name": "GET Admin Messages (all)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/messages?status=all&page=1&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "messages"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "all",
+                  "description": "all | slot | displaying | completed"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "List submit / complete messages. Requires JWT."
+          },
+          "response": []
+        },
+        {
+          "name": "GET Admin Messages (completed)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/messages?status=completed&page=1&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "messages"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "completed"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "List completed messages only."
+          },
+          "response": []
+        },
+        {
+          "name": "GET Admin Messages (slot)",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/admin/messages?status=slot&page=1&limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "admin", "messages"],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "slot"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "List slot messages only."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

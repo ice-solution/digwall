@@ -1,0 +1,23 @@
+[Unit]
+Description=Digital Wall API (Express + WebSocket)
+After=network.target mongod.service
+Wants=mongod.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/digwall.ice-solution.hk
+EnvironmentFile=/var/www/digwall.ice-solution.hk/.env
+ExecStart=/usr/bin/node server/index.js
+Restart=on-failure
+RestartSec=5
+# Bind only locally — nginx proxies public traffic
+Environment=NODE_ENV=production
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Digital Wall — 提交訊息</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body class="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 text-white font-display">
+  <div class="min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-md">
+      <header class="text-center mb-8">
+        <h1 class="text-3xl font-bold tracking-tight">Digital Wall</h1>
+        <p class="text-slate-400 mt-2">提交你的訊息到數碼牆</p>
+      </header>
+
+      <form id="submit-form" class="card space-y-5">
+        <div>
+          <label for="name" class="block text-sm text-slate-300 mb-1.5">姓名 Name *</label>
+          <input id="name" name="name" type="text" required maxlength="80" class="input-field" placeholder="你的名字" />
+        </div>
+
+        <div>
+          <label for="sticker_id" class="block text-sm text-slate-300 mb-1.5">Sticker ID *</label>
+          <input id="sticker_id" name="sticker_id" type="text" required maxlength="64" class="input-field" placeholder="例如 sticker_01" />
+        </div>
+
+        <div>
+          <label for="msg_id" class="block text-sm text-slate-300 mb-1.5">Message ID *</label>
+          <input id="msg_id" name="msg_id" type="text" required maxlength="64" class="input-field" placeholder="例如 msg_hello" />
+        </div>
+
+        <div>
+          <label for="optional_id" class="block text-sm text-slate-300 mb-1.5">Optional ID</label>
+          <input id="optional_id" name="optional_id" type="text" maxlength="64" class="input-field" placeholder="可選" />
+        </div>
+
+        <button type="submit" id="submit-btn" class="btn-primary w-full">提交 Submit</button>
+
+        <p id="status" class="text-center text-sm min-h-[1.25rem]"></p>
+      </form>
+
+      <p class="text-center text-slate-500 text-sm mt-6">
+        <a href="/display.html" class="hover:text-blue-400">Display</a>
+        ·
+        <a href="/admin.html" class="hover:text-blue-400">Admin</a>
+      </p>
+    </div>
+  </div>
+
+  <script>
+    const form = document.getElementById('submit-form');
+    const statusEl = document.getElementById('status');
+    const btn = document.getElementById('submit-btn');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      btn.disabled = true;
+      statusEl.textContent = '提交中…';
+      statusEl.className = 'text-center text-sm min-h-[1.25rem] text-slate-400';
+
+      const body = {
+        name: form.name.value.trim(),
+        sticker_id: form.sticker_id.value.trim(),
+        msg_id: form.msg_id.value.trim(),
+        optional_id: form.optional_id.value.trim(),
+      };
+
+      try {
+        const res = await fetch('/api/messages/slot', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '提交失敗');
+
+        statusEl.textContent = '提交成功！訊息已推送到牆面。';
+        statusEl.className = 'text-center text-sm min-h-[1.25rem] text-emerald-400';
+        form.reset();
+      } catch (err) {
+        statusEl.textContent = err.message;
+        statusEl.className = 'text-center text-sm min-h-[1.25rem] text-red-400';
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

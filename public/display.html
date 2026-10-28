@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Digital Wall — Display</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body class="min-h-screen bg-slate-950 text-white font-display overflow-hidden">
+  <div class="fixed top-4 right-4 flex items-center gap-2 text-sm z-10">
+    <span id="ws-dot" class="w-2.5 h-2.5 rounded-full bg-red-500"></span>
+    <span id="ws-label" class="text-slate-400">斷線</span>
+  </div>
+
+  <div id="idle" class="min-h-screen flex flex-col items-center justify-center text-slate-500">
+    <p class="text-2xl font-medium">Digital Wall</p>
+    <p class="mt-2">等待新訊息…</p>
+    <p id="queue-info" class="mt-4 text-sm text-slate-600"></p>
+  </div>
+
+  <div id="stage" class="hidden min-h-screen flex flex-col items-center justify-center p-8">
+    <div class="max-w-2xl w-full text-center space-y-6 animate-pulse">
+      <p class="text-slate-400 text-sm uppercase tracking-widest">New Message</p>
+      <h2 id="d-name" class="text-5xl font-bold"></h2>
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-left mt-8">
+        <div class="card py-4">
+          <p class="text-xs text-slate-500">Sticker ID</p>
+          <p id="d-sticker" class="text-lg font-mono mt-1 break-all"></p>
+        </div>
+        <div class="card py-4">
+          <p class="text-xs text-slate-500">Message ID</p>
+          <p id="d-msg" class="text-lg font-mono mt-1 break-all"></p>
+        </div>
+        <div class="card py-4">
+          <p class="text-xs text-slate-500">Optional ID</p>
+          <p id="d-opt" class="text-lg font-mono mt-1 break-all"></p>
+        </div>
+      </div>
+      <p class="text-slate-500 text-sm mt-6">顯示中… 完成後會自動標記 completed</p>
+    </div>
+  </div>
+
+  <script>
+    const DISPLAY_MS = 5000; // 模擬顯示時間，實際可改
+    const queue = [];
+    let busy = false;
+
+    const idle = document.getElementById('idle');
+    const stage = document.getElementById('stage');
+    const queueInfo = document.getElementById('queue-info');
+    const wsDot = document.getElementById('ws-dot');
+    const wsLabel = document.getElementById('ws-label');
+
+    function updateQueueInfo() {
+      queueInfo.textContent = queue.length ? `佇列：${queue.length} 則` : '';
+    }
+
+    async function markCompleted(id) {
+      await fetch('/api/messages/completed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+    }
+
+    async function showNext() {
+      if (busy || queue.length === 0) {
+        if (!busy) {
+          idle.classList.remove('hidden');
+          stage.classList.add('hidden');
+        }
+        updateQueueInfo();
+        return;
+      }
+
+      busy = true;
+      idle.classList.add('hidden');
+      stage.classList.remove('hidden');
+      updateQueueInfo();
+
+      const msg = queue.shift();
+      document.getElementById('d-name').textContent = msg.name;
+      document.getElementById('d-sticker').textContent = msg.sticker_id;
+      document.getElementById('d-msg').textContent = msg.msg_id;
+      document.getElementById('d-opt').textContent = msg.optional_id || '—';
+
+      await new Promise((r) => setTimeout(r, DISPLAY_MS));
+
+      try {
+        await markCompleted(msg.id);
+      } catch (e) {
+        console.error('complete failed', e);
+      }
+
+      busy = false;
+      showNext();
+    }
+
+    function enqueue(msg) {
+      if (!msg || !msg.id) return;
+      if (queue.some((q) => q.id === msg.id)) return;
+      queue.push(msg);
+      showNext();
+    }
+
+    // Bootstrap pending slot/displaying messages
+    fetch('/api/messages/slot')
+      .then((r) => r.json())
+      .then((data) => {
+        (data.messages || []).forEach(enqueue);
+      })
+      .catch(console.error);
+
+    function connectWS() {
+      const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+      const ws = new WebSocket(`${proto}://${location.host}/ws`);
+
+      ws.onopen = () => {
+        wsDot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500';
+        wsLabel.textContent = '已連線';
+      };
+
+      ws.onclose = () => {
+        wsDot.className = 'w-2.5 h-2.5 rounded-full bg-red-500';
+        wsLabel.textContent = '斷線，重連中…';
+        setTimeout(connectWS, 2000);
+      };
+
+      ws.onmessage = (ev) => {
+        try {
+          const payload = JSON.parse(ev.data);
+          if (payload.type === 'new_message' && payload.data) {
+            enqueue(payload.data);
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      };
+    }
+
+    connectWS();
+  </script>
+</body>
+</html>

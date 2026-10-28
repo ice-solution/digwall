@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Digital Wall — Admin</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body class="min-h-screen bg-slate-950 text-white font-display">
+  <!-- Login -->
+  <div id="login-view" class="min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-sm card space-y-5">
+      <h1 class="text-2xl font-bold text-center">Admin Login</h1>
+      <div>
+        <label class="block text-sm text-slate-300 mb-1.5">Username</label>
+        <input id="username" type="text" class="input-field" autocomplete="username" />
+      </div>
+      <div>
+        <label class="block text-sm text-slate-300 mb-1.5">Password</label>
+        <input id="password" type="password" class="input-field" autocomplete="current-password" />
+      </div>
+      <button id="login-btn" class="btn-primary w-full">登入</button>
+      <p id="login-error" class="text-red-400 text-sm text-center min-h-[1.25rem]"></p>
+    </div>
+  </div>
+
+  <!-- Dashboard -->
+  <div id="dash-view" class="hidden">
+    <header class="border-b border-slate-800 bg-slate-900/80 sticky top-0 z-10">
+      <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+        <h1 class="text-xl font-bold">Digital Wall Admin</h1>
+        <div class="flex items-center gap-3">
+          <span id="admin-name" class="text-slate-400 text-sm"></span>
+          <button id="logout-btn" class="btn-secondary text-sm py-1.5 px-3">登出</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto px-4 py-8 space-y-8">
+      <!-- Stats -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-4" id="stats">
+        <div class="card text-center py-4">
+          <p class="text-2xl font-bold" id="stat-total">0</p>
+          <p class="text-slate-400 text-sm">Total</p>
+        </div>
+        <div class="card text-center py-4">
+          <p class="text-2xl font-bold text-amber-400" id="stat-slot">0</p>
+          <p class="text-slate-400 text-sm">Slot</p>
+        </div>
+        <div class="card text-center py-4">
+          <p class="text-2xl font-bold text-blue-400" id="stat-displaying">0</p>
+          <p class="text-slate-400 text-sm">Displaying</p>
+        </div>
+        <div class="card text-center py-4">
+          <p class="text-2xl font-bold text-emerald-400" id="stat-completed">0</p>
+          <p class="text-slate-400 text-sm">Completed</p>
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div class="flex flex-wrap gap-2 items-center">
+        <span class="text-slate-400 text-sm mr-2">篩選：</span>
+        <button data-status="all" class="filter-btn btn-primary text-sm py-1.5 px-3">全部</button>
+        <button data-status="slot" class="filter-btn btn-secondary text-sm py-1.5 px-3">Slot</button>
+        <button data-status="displaying" class="filter-btn btn-secondary text-sm py-1.5 px-3">Displaying</button>
+        <button data-status="completed" class="filter-btn btn-secondary text-sm py-1.5 px-3">Completed</button>
+        <button id="refresh-btn" class="btn-secondary text-sm py-1.5 px-3 ml-auto">重新整理</button>
+      </div>
+
+      <!-- Table -->
+      <div class="card overflow-x-auto p-0">
+        <table class="w-full text-sm text-left">
+          <thead class="bg-slate-900 text-slate-400 border-b border-slate-700">
+            <tr>
+              <th class="px-4 py-3 font-medium">Name</th>
+              <th class="px-4 py-3 font-medium">Sticker</th>
+              <th class="px-4 py-3 font-medium">Msg ID</th>
+              <th class="px-4 py-3 font-medium">Optional</th>
+              <th class="px-4 py-3 font-medium">Status</th>
+              <th class="px-4 py-3 font-medium">Submitted</th>
+              <th class="px-4 py-3 font-medium">Completed</th>
+            </tr>
+          </thead>
+          <tbody id="msg-tbody" class="divide-y divide-slate-700"></tbody>
+        </table>
+        <p id="empty" class="text-center text-slate-500 py-8 hidden">沒有訊息</p>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const TOKEN_KEY = 'dw_admin_token';
+    let currentStatus = 'all';
+
+    const loginView = document.getElementById('login-view');
+    const dashView = document.getElementById('dash-view');
+
+    function getToken() {
+      return localStorage.getItem(TOKEN_KEY);
+    }
+
+    function setToken(t) {
+      localStorage.setItem(TOKEN_KEY, t);
+    }
+
+    function clearToken() {
+      localStorage.removeItem(TOKEN_KEY);
+    }
+
+    function showDash(username) {
+      loginView.classList.add('hidden');
+      dashView.classList.remove('hidden');
+      document.getElementById('admin-name').textContent = username || 'admin';
+      loadAll();
+    }
+
+    function showLogin() {
+      dashView.classList.add('hidden');
+      loginView.classList.remove('hidden');
+    }
+
+    async function api(path) {
+      const res = await fetch(path, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      if (res.status === 401) {
+        clearToken();
+        showLogin();
+        throw new Error('Unauthorized');
+      }
+      return res.json();
+    }
+
+    function statusBadge(status) {
+      const map = {
+        slot: 'bg-amber-500/20 text-amber-300',
+        displaying: 'bg-blue-500/20 text-blue-300',
+        completed: 'bg-emerald-500/20 text-emerald-300',
+      };
+      return `<span class="px-2 py-0.5 rounded text-xs ${map[status] || 'bg-slate-600'}">${status}</span>`;
+    }
+
+    function fmt(d) {
+      if (!d) return '—';
+      return new Date(d).toLocaleString('zh-HK');
+    }
+
+    async function loadStats() {
+      const s = await api('/api/admin/stats');
+      document.getElementById('stat-total').textContent = s.total;
+      document.getElementById('stat-slot').textContent = s.slot;
+      document.getElementById('stat-displaying').textContent = s.displaying;
+      document.getElementById('stat-completed').textContent = s.completed;
+    }
+
+    async function loadMessages() {
+      const data = await api(`/api/admin/messages?status=${currentStatus}&limit=100`);
+      const tbody = document.getElementById('msg-tbody');
+      const empty = document.getElementById('empty');
+      tbody.innerHTML = '';
+
+      if (!data.messages.length) {
+        empty.classList.remove('hidden');
+        return;
+      }
+      empty.classList.add('hidden');
+
+      data.messages.forEach((m) => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-800/50';
+        tr.innerHTML = `
+          <td class="px-4 py-3">${escapeHtml(m.name)}</td>
+          <td class="px-4 py-3 font-mono text-xs">${escapeHtml(m.sticker_id)}</td>
+          <td class="px-4 py-3 font-mono text-xs">${escapeHtml(m.msg_id)}</td>
+          <td class="px-4 py-3 font-mono text-xs">${escapeHtml(m.optional_id || '—')}</td>
+          <td class="px-4 py-3">${statusBadge(m.status)}</td>
+          <td class="px-4 py-3 text-slate-400 whitespace-nowrap">${fmt(m.createdAt)}</td>
+          <td class="px-4 py-3 text-slate-400 whitespace-nowrap">${fmt(m.completedAt)}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    async function loadAll() {
+      await Promise.all([loadStats(), loadMessages()]);
+    }
+
+    document.getElementById('login-btn').addEventListener('click', async () => {
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      const errEl = document.getElementById('login-error');
+      errEl.textContent = '';
+
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || '登入失敗');
+        setToken(data.token);
+        showDash(data.user.username);
+      } catch (e) {
+        errEl.textContent = e.message;
+      }
+    });
+
+    document.getElementById('logout-btn').addEventListener('click', () => {
+      clearToken();
+      showLogin();
+    });
+
+    document.getElementById('refresh-btn').addEventListener('click', loadAll);
+
+    document.querySelectorAll('.filter-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        currentStatus = btn.dataset.status;
+        document.querySelectorAll('.filter-btn').forEach((b) => {
+          b.className = 'filter-btn btn-secondary text-sm py-1.5 px-3';
+        });
+        btn.className = 'filter-btn btn-primary text-sm py-1.5 px-3';
+        loadMessages();
+      });
+    });
+
+    // Auto-login if token exists
+    if (getToken()) {
+      showDash();
+    }
+  </script>
+</body>
+</html>
