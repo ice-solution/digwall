@@ -44,10 +44,13 @@ sudo npm run seed
 
 # 2) Apache2 (HTTP only — Flexible)
 sudo a2enmod proxy proxy_http proxy_wstunnel headers remoteip rewrite
+# 必須見到 proxy_wstunnel_module，否則 /ws 會 HTML 500
+sudo apache2ctl -M | grep -E 'proxy_wstunnel|rewrite|proxy_http'
 sudo cp deploy/apache2/cloudflare-remoteip.conf /etc/apache2/conf-available/
 sudo a2enconf cloudflare-remoteip
 sudo cp deploy/apache2/digwall.ice-solution.hk.conf /etc/apache2/sites-available/
 sudo a2ensite digwall.ice-solution.hk
+# 確認 conf 內 DIGWALL_BACKEND port 與 .env PORT 一致（預設 5799）
 sudo apache2ctl configtest && sudo systemctl reload apache2
 
 # 3) systemd
@@ -80,6 +83,32 @@ sudo systemctl status digital-wall
 sudo journalctl -u digital-wall -f
 sudo tail -f /var/log/apache2/digwall.error.log
 ```
+
+## WebSocket 故障排查（`wss://…/ws` 回 HTML 500）
+
+1. **開 module**
+   ```bash
+   sudo a2enmod proxy proxy_http proxy_wstunnel rewrite headers
+   sudo systemctl reload apache2
+   sudo apache2ctl -M | grep proxy_wstunnel
+   ```
+2. **Cloudflare → Network → WebSockets = ON**
+3. **Backend port**：vhost `DIGWALL_BACKEND` 必須等於 Node `.env` 的 `PORT`，且 process 在聽：
+   ```bash
+   curl -s http://127.0.0.1:5799/health
+   sudo ss -lntp | grep 5799
+   sudo tail -50 /var/log/apache2/digwall.error.log
+   ```
+4. Origin 本機測 upgrade（應 **唔係** HTML）：
+   ```bash
+   curl -i -N \
+     -H 'Connection: Upgrade' \
+     -H 'Upgrade: websocket' \
+     -H 'Sec-WebSocket-Version: 13' \
+     -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
+     http://127.0.0.1/ws -H 'Host: digwall.ice-solution.hk'
+   ```
+   成功時 status 接近 `101 Switching Protocols`。若仍係 Apache HTML 500 → `proxy_wstunnel` 未開或 conf 未 reload。
 
 ## 注意
 

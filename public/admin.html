@@ -9,19 +9,19 @@
 <body class="min-h-screen bg-slate-950 text-white font-display">
   <!-- Login -->
   <div id="login-view" class="min-h-screen flex items-center justify-center p-4">
-    <div class="w-full max-w-sm card space-y-5">
+    <form id="login-form" class="w-full max-w-sm card space-y-5">
       <h1 class="text-2xl font-bold text-center">Admin Login</h1>
       <div>
         <label class="block text-sm text-slate-300 mb-1.5">Username</label>
-        <input id="username" type="text" class="input-field" autocomplete="username" />
+        <input id="username" name="username" type="text" class="input-field" autocomplete="username" required />
       </div>
       <div>
         <label class="block text-sm text-slate-300 mb-1.5">Password</label>
-        <input id="password" type="password" class="input-field" autocomplete="current-password" />
+        <input id="password" name="password" type="password" class="input-field" autocomplete="current-password" required />
       </div>
-      <button id="login-btn" class="btn-primary w-full">登入</button>
+      <button type="submit" id="login-btn" class="btn-primary w-full">登入</button>
       <p id="login-error" class="text-red-400 text-sm text-center min-h-[1.25rem]"></p>
-    </div>
+    </form>
   </div>
 
   <!-- Dashboard -->
@@ -193,11 +193,14 @@
       await Promise.all([loadStats(), loadMessages()]);
     }
 
-    document.getElementById('login-btn').addEventListener('click', async () => {
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
       const username = document.getElementById('username').value.trim();
       const password = document.getElementById('password').value;
       const errEl = document.getElementById('login-error');
+      const btn = document.getElementById('login-btn');
       errEl.textContent = '';
+      btn.disabled = true;
 
       try {
         const res = await fetch('/api/auth/login', {
@@ -209,8 +212,10 @@
         if (!res.ok) throw new Error(data.error || '登入失敗');
         setToken(data.token);
         showDash(data.user.username);
-      } catch (e) {
-        errEl.textContent = e.message;
+      } catch (err) {
+        errEl.textContent = err.message;
+      } finally {
+        btn.disabled = false;
       }
     });
 

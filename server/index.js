@@ -6,6 +6,7 @@ const express = require('express');
 const cors = require('cors');
 
 const { connectDB } = require('./config/db');
+const { ensureAdmin } = require('./ensureAdmin');
 const { initWebSocket } = require('./websocket');
 const authRoutes = require('./routes/auth');
 const messageRoutes = require('./routes/messages');
@@ -33,6 +34,7 @@ app.get('/health', (_req, res) => {
 
 async function start() {
   await connectDB();
+  await ensureAdmin();
   initWebSocket(server);
 
   server.listen(PORT, () => {
