@@ -3,3 +3,6 @@ node_modules/
 public/css/style.css
 .DS_Store
 *.log
+
+# Local design source (not deployed)
+index_page/

@@ -21,8 +21,20 @@
       font-family: Arial, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
     }
     .page { max-width: 420px; margin: 0 auto; padding: 24px 20px 40px; }
-    .field { margin-bottom: 28px; }
+    .field { position: relative; margin-bottom: 28px; }
+    /* 錯誤訊息絕對定位喺輸入框下面嘅空位，唔會推走下面嘅內容 */
+    .field-error {
+      position: absolute;
+      left: 0;
+      top: 100%;
+      margin: 3px 0 0;
+      font-size: 13px;
+      line-height: 1.3;
+      color: #c0262d;
+    }
+    .input.invalid { outline: 2px solid #c0262d; outline-offset: 0; }
     .label { display: block; font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+    .hint { font-size: 14px; font-weight: 400; color: #5b6b78; }
     .input {
       width: 100%;
       height: 48px;
@@ -104,13 +116,15 @@
   <main class="page">
     <form id="submit-form" novalidate>
       <div class="field">
-        <label class="label" for="name">姓名 Name</label>
-        <input id="name" class="input" type="text" maxlength="80" autocomplete="name" />
+        <label class="label" for="name">姓名 Name <span class="hint">(e.g. David Chan)</span></label>
+        <input id="name" class="input" type="text" maxlength="80" autocomplete="name" aria-describedby="name-error" />
+        <p class="field-error" id="name-error" role="alert"></p>
       </div>
 
       <div class="field">
-        <label class="label" for="agent-code">Agent Code</label>
-        <input id="agent-code" class="input" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="7" autocomplete="off" />
+        <label class="label" for="agent-code">Agent Code <span class="hint">(e.g. 0123456)</span></label>
+        <input id="agent-code" class="input" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="7" autocomplete="off" aria-describedby="agent-error" />
+        <p class="field-error" id="agent-error" role="alert"></p>
       </div>
 
       <div class="field picker">
@@ -153,6 +167,8 @@
     const form = document.getElementById('submit-form');
     const nameInput = document.getElementById('name');
     const agentInput = document.getElementById('agent-code');
+    const nameError = document.getElementById('name-error');
+    const agentError = document.getElementById('agent-error');
     const stage = document.getElementById('stage');
     const pvBg = document.getElementById('pv-bg');
     const pvMsg = document.getElementById('pv-msg');
@@ -163,8 +179,13 @@
     const statusEl = document.getElementById('status');
     const btn = document.getElementById('submit-btn');
 
+    // 預覽用：畫面第 n 個 Message 對應嘅圖檔（msg_N.webp = Msg_N.png）
+    // 畫面 1:Msg_4、2:Msg_3、3:Msg_5、4:Msg_1、5:Msg_2
+    // Unity 嘅 spriteMsgs 已經跟呢個次序排，所以 msg_id = 畫面第 n 個 - 1
+    const MESSAGE_ORDER = [3, 2, 4, 0, 1];
+
     const bgSrc = (i) => `img/bg_${i + 1}.webp`;
-    const msgSrc = (i) => `img/msg_${i + 1}.webp`;
+    const msgSrc = (i) => `img/msg_${MESSAGE_ORDER[i] + 1}.webp`;
 
     // 先載入所有圖，切換時唔會閃
     for (let i = 0; i < STYLE_COUNT; i++) new Image().src = bgSrc(i);
@@ -201,10 +222,20 @@
     document.querySelectorAll('.arrow').forEach((el) => {
       el.addEventListener('click', () => step(el.dataset.target, Number(el.dataset.step)));
     });
-    nameInput.addEventListener('input', render);
+    function setFieldError(input, errorEl, message) {
+      errorEl.textContent = message;
+      input.classList.toggle('invalid', Boolean(message));
+      input.setAttribute('aria-invalid', message ? 'true' : 'false');
+    }
+
+    nameInput.addEventListener('input', () => {
+      setFieldError(nameInput, nameError, '');
+      render();
+    });
     // Agent Code 只收數字（唔會顯示喺預覽）
     agentInput.addEventListener('input', () => {
       agentInput.value = agentInput.value.replace(/\D/g, '').slice(0, 7);
+      setFieldError(agentInput, agentError, '');
     });
     new ResizeObserver(fitName).observe(stage);
 
@@ -216,16 +247,16 @@
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const name = nameInput.value.trim();
-      if (!name) {
-        setStatus('請輸入姓名', 'err');
-        nameInput.focus();
-        return;
-      }
-
       const agentCode = agentInput.value.trim();
-      if (!/^\d{5,7}$/.test(agentCode)) {
-        setStatus('Agent Code 要係 5-7 個數字', 'err');
-        agentInput.focus();
+
+      // 兩個欄位一齊檢查，錯誤各自顯示喺自己嘅輸入框下面
+      const nameMessage = name ? '' : '請輸入姓名';
+      const agentMessage = /^\d{5,7}$/.test(agentCode) ? '' : 'Agent Code 要係 5-7 個數字';
+      setFieldError(nameInput, nameError, nameMessage);
+      setFieldError(agentInput, agentError, agentMessage);
+      if (nameMessage || agentMessage) {
+        setStatus('');
+        (nameMessage ? nameInput : agentInput).focus();
         return;
       }
 
