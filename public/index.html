@@ -110,6 +110,32 @@
     .status { min-height: 1.4em; margin: 14px 0 0; text-align: center; font-size: 15px; }
     .status.ok { color: #0a7a3d; }
     .status.err { color: #c0262d; }
+
+    .save-panel { margin-top: 20px; }
+    .save-panel[hidden] { display: none !important; }
+    .save-notice { margin: 0 0 14px; text-align: center; line-height: 1.5; }
+    .save-notice strong { display: block; font-size: 18px; color: var(--blue); margin-bottom: 4px; }
+    .save-notice span { display: block; font-size: 14px; color: #334155; }
+    #save-preview {
+      display: block;
+      width: 100%;
+      height: auto;
+      background: #fff;
+      -webkit-touch-callout: default;
+      -webkit-user-select: auto;
+      user-select: auto;
+    }
+    .save-hint {
+      margin: 12px 0 0;
+      text-align: center;
+      font-size: 14px;
+      line-height: 1.5;
+      color: #334155;
+    }
+    .save-hint:empty { display: none; }
+    .save-actions { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; }
+    .save-done { background: #64748b; }
+    .save-done:hover:not(:disabled) { background: #475569; }
   </style>
 </head>
 <body>
@@ -154,6 +180,19 @@
       <button type="submit" id="submit-btn" class="submit">提交 Submit</button>
       <p id="status" class="status" role="status"></p>
     </form>
+
+    <section id="save-panel" class="save-panel" hidden>
+      <p class="save-notice">
+        <strong>請儲存此圖片到你的裝置</strong>
+        <span>Please save this image to your device</span>
+      </p>
+      <img id="save-preview" alt="Composed message" />
+      <p id="save-hint" class="save-hint"></p>
+      <div class="save-actions">
+        <button type="button" id="save-btn" class="submit">下載圖片 Download JPG</button>
+        <button type="button" id="save-done" class="submit save-done">完成 Done</button>
+      </div>
+    </section>
   </main>
 
   <script>
@@ -178,6 +217,13 @@
     const messageValue = document.getElementById('message-value');
     const statusEl = document.getElementById('status');
     const btn = document.getElementById('submit-btn');
+    const savePanel = document.getElementById('save-panel');
+    const savePreview = document.getElementById('save-preview');
+    const saveHint = document.getElementById('save-hint');
+    const saveBtn = document.getElementById('save-btn');
+    const saveDone = document.getElementById('save-done');
+    let saveUrl = '';
+    let saveFile = null;
 
     // 預覽用：畫面第 n 個 Message 對應嘅圖檔（msg_N.webp = Msg_N.png）
     // 畫面 1:Msg_4、2:Msg_3、3:Msg_5、4:Msg_1、5:Msg_2
@@ -294,61 +340,109 @@
       );
       if (name) drawName(ctx, name, layout.name, canvasW, canvasH);
       // 1.0 = 最高 JPEG 質素；文字邊緣仍清晰啲
-      return canvas.toDataURL('image/jpeg', 1.0);
+      return canvasToJpegBlob(canvas);
     }
 
-    function openDownloadPage(win, dataUrl, fileName) {
-      if (!win || win.closed) {
-        win = window.open('', '_blank');
+    function canvasToJpegBlob(canvas) {
+      return new Promise((resolve, reject) => {
+        let settled = false;
+        const finish = (blob, err) => {
+          if (settled) return;
+          settled = true;
+          if (blob) resolve(blob);
+          else reject(err || new Error('圖片產生失敗'));
+        };
+        const fromDataUrl = () => {
+          try {
+            const dataUrl = canvas.toDataURL('image/jpeg', 1.0);
+            fetch(dataUrl).then((r) => r.blob()).then((blob) => finish(blob)).catch((err) => finish(null, err));
+          } catch (err) {
+            finish(null, err);
+          }
+        };
+        // 部分 iPhone 上 toBlob 唔會 callback，逾時就改用 toDataURL
+        const timer = setTimeout(fromDataUrl, 3000);
+        try {
+          canvas.toBlob((blob) => {
+            clearTimeout(timer);
+            if (blob) finish(blob);
+            else fromDataUrl();
+          }, 'image/jpeg', 1.0);
+        } catch (err) {
+          clearTimeout(timer);
+          fromDataUrl();
+        }
+      });
+    }
+
+    // iPhone Safari 唔支援 <a download> 配 data: / blob:，撳落去完全冇反應。
+    function isIOS() {
+      return /iPad|iPhone|iPod/.test(navigator.userAgent)
+        || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    }
+
+    function canShareFile(file) {
+      try {
+        return !!(file && navigator.canShare && navigator.canShare({ files: [file] }));
+      } catch (err) {
+        return false;
       }
-      if (!win) {
-        setStatus('請允許彈出視窗以下載圖片 / Please allow pop-ups to download the image', 'err');
+    }
+
+    function showLongPressHint() {
+      saveHint.textContent = '請長按上方圖片，然後選擇「儲存影像」 / Long-press the image, then tap Save Image.';
+      saveBtn.textContent = '請長按上方圖片';
+    }
+
+    function showSavePanel(blob, fileName) {
+      const nextUrl = URL.createObjectURL(blob);
+      const prevUrl = saveUrl;
+      saveFile = new File([blob], fileName, { type: 'image/jpeg' });
+      saveUrl = nextUrl;
+      savePreview.src = nextUrl;
+      if (prevUrl) URL.revokeObjectURL(prevUrl);
+      const ios = isIOS();
+      saveBtn.textContent = ios ? '儲存圖片 Save Image' : '下載圖片 Download JPG';
+      saveHint.textContent = ios
+        ? '請按「儲存圖片」，在分享選單選擇「儲存影像」。亦可長按圖片再選「儲存影像」。 / Tap Save Image, then choose Save Image. Or long-press the picture.'
+        : '';
+      savePanel.hidden = false;
+      savePanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function clearSavePanel() {
+      savePanel.hidden = true;
+      savePreview.removeAttribute('src');
+      saveHint.textContent = '';
+      saveFile = null;
+      if (saveUrl) {
+        URL.revokeObjectURL(saveUrl);
+        saveUrl = '';
+      }
+    }
+
+    saveBtn.addEventListener('click', () => {
+      if (!saveFile || !saveUrl) return;
+      if (isIOS()) {
+        if (canShareFile(saveFile)) {
+          // iOS 如果同時傳 title 同 files，分享會直接失敗
+          navigator.share({ files: [saveFile] }).catch((err) => {
+            if (!err || err.name === 'AbortError') return;
+            showLongPressHint();
+          });
+          return;
+        }
+        showLongPressHint();
         return;
       }
-      const safeName = fileName.replace(/[^\w.-]+/g, '_');
-      win.document.open();
-      win.document.write(`<!DOCTYPE html>
-<html lang="zh-Hant">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>儲存圖片 Save Image</title>
-  <style>
-    body { margin: 0; min-height: 100vh; background: #f0f7fc; color: #2b2b2b;
-      font-family: Arial, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
-      display: flex; flex-direction: column; align-items: center; padding: 24px 16px 40px; }
-    .notice { max-width: 640px; text-align: center; margin-bottom: 20px; line-height: 1.55; }
-    .notice strong { display: block; font-size: 20px; color: #0b4fc2; margin-bottom: 6px; }
-    .notice span { display: block; font-size: 16px; color: #334155; }
-    img { max-width: 100%; width: auto; height: auto; background: #fff;
-      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12); image-rendering: auto; }
-    .actions { margin-top: 20px; display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
-    a.btn, button.btn {
-      display: inline-flex; align-items: center; justify-content: center;
-      min-width: 200px; height: 48px; padding: 0 20px; border: 0; background: #1b8fc6;
-      color: #fff; font-size: 16px; font-weight: 700; text-decoration: none; cursor: pointer; }
-    a.btn:hover, button.btn:hover { background: #1679a8; }
-    button.secondary { background: #64748b; }
-    button.secondary:hover { background: #475569; }
-  </style>
-</head>
-<body>
-  <div class="notice">
-    <strong>請儲存此圖片到你的裝置</strong>
-    <span>Please save this image to your device</span>
-  </div>
-  <img id="preview" alt="Composed message" src="${dataUrl}" />
-  <div class="actions">
-    <a class="btn" id="download" download="${safeName}" href="${dataUrl}">下載圖片 Download JPG</a>
-    <button type="button" class="btn secondary" id="close-btn">關閉 Close</button>
-  </div>
-  <script>
-    document.getElementById('close-btn').onclick = function () { window.close(); };
-  <\/script>
-</body>
-</html>`);
-      win.document.close();
-    }
+      const a = document.createElement('a');
+      a.href = saveUrl;
+      a.download = saveFile.name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    });
+    saveDone.addEventListener('click', clearSavePanel);
 
     // 同 Unity Text 嘅 Best Fit 類似：由大到細揀到放得落個框
     function fitName() {
@@ -422,9 +516,6 @@
       btn.disabled = true;
       setStatus('提交中…');
 
-      // 喺用戶手勢內先開空白頁，避免 popup blocker
-      const downloadWin = window.open('', '_blank');
-
       // Unity 用 0 起始 index：sticker_id 0 = Prefab[0]，msg_id 0 = Sprite[0]
       const body = {
         name,
@@ -445,17 +536,16 @@
         if (!res.ok) throw new Error(data.error || '提交失敗');
 
         const jpeg = await composeJpeg(name, styleAtSubmit, messageAtSubmit);
-        const fileName = `digital-wall-${agentCode || 'message'}.jpg`;
-        openDownloadPage(downloadWin, jpeg, fileName);
+        const fileName = `digital-wall-${agentCode || 'message'}.jpg`.replace(/[^\w.-]+/g, '_');
+        showSavePanel(jpeg, fileName);
 
-        setStatus('提交成功！請於新分頁儲存圖片 / Submitted! Please save the image in the new tab.', 'ok');
+        setStatus('提交成功！請儲存下方圖片 / Submitted! Please save the image below.', 'ok');
         nameInput.value = '';
         agentInput.value = '';
         setFieldError(nameInput, nameError, '');
         setFieldError(agentInput, agentError, '');
         render();
       } catch (err) {
-        if (downloadWin && !downloadWin.closed) downloadWin.close();
         setStatus(err.message || '提交失敗', 'err');
       } finally {
         btn.disabled = false;
