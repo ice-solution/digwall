@@ -187,9 +187,168 @@
     const bgSrc = (i) => `img/bg_${i + 1}.webp`;
     const msgSrc = (i) => `img/msg_${MESSAGE_ORDER[i] + 1}.webp`;
 
+    // 同 CSS / Unity prefab 百分比座標（基準 1920x1080）
+    const LAYOUTS = {
+      0: {
+        msg: { left: 0.43698, top: 0.41574, width: 0.4, height: 0.4 },
+        name: { left: 0.65078, top: 0.33519, width: 0.17969, height: 0.09259 },
+      },
+      1: {
+        msg: { left: 0.27344, top: 0.48796, width: 0.3, height: 0.3 },
+        name: { left: 0.22786, top: 0.37963, width: 0.17969, height: 0.09259 },
+      },
+    };
+    // 輸出跟素材原生解像度（而家 webp 係 960x540）；拉上 1920 會模糊
+    const DESIGN_W = 1920;
+    const DESIGN_H = 1080;
+
     // 先載入所有圖，切換時唔會閃
     for (let i = 0; i < STYLE_COUNT; i++) new Image().src = bgSrc(i);
     for (let i = 0; i < MESSAGE_COUNT; i++) new Image().src = msgSrc(i);
+
+    function loadImage(src) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('圖片載入失敗'));
+        img.src = src;
+      });
+    }
+
+    function wrapCanvasText(ctx, text, maxWidth) {
+      const lines = [];
+      let line = '';
+      for (const ch of text) {
+        const test = line + ch;
+        if (line && ctx.measureText(test).width > maxWidth) {
+          lines.push(line);
+          line = ch;
+        } else {
+          line = test;
+        }
+      }
+      if (line) lines.push(line);
+      return lines.length ? lines : [''];
+    }
+
+    function drawName(ctx, name, box, canvasW, canvasH) {
+      const scale = canvasW / DESIGN_W;
+      const x = box.left * canvasW;
+      const y = box.top * canvasH;
+      const w = box.width * canvasW;
+      const h = box.height * canvasH;
+      const maxSize = Math.round(NAME_MAX_SIZE * scale);
+      const minSize = Math.max(8, Math.round(NAME_MIN_SIZE * scale));
+      ctx.fillStyle = '#0b2aa5';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      for (let size = maxSize; size >= minSize; size -= 1) {
+        ctx.font = `700 ${size}px Arial, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif`;
+        const lines = wrapCanvasText(ctx, name, w);
+        const lineHeight = size * 1.05;
+        const totalH = lines.length * lineHeight;
+        if (totalH <= h && lines.every((ln) => ctx.measureText(ln).width <= w)) {
+          const startY = y + (h - totalH) / 2 + lineHeight / 2;
+          lines.forEach((ln, i) => {
+            ctx.fillText(ln, x + w / 2, startY + i * lineHeight);
+          });
+          return;
+        }
+      }
+
+      ctx.font = `700 ${minSize}px Arial, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif`;
+      const lines = wrapCanvasText(ctx, name, w);
+      const lineHeight = minSize * 1.05;
+      const startY = y + (h - lines.length * lineHeight) / 2 + lineHeight / 2;
+      lines.forEach((ln, i) => {
+        ctx.fillText(ln, x + w / 2, startY + i * lineHeight);
+      });
+    }
+
+    async function composeJpeg(name, style, message) {
+      const layout = LAYOUTS[style] || LAYOUTS[0];
+      const [bg, msg] = await Promise.all([
+        loadImage(bgSrc(style)),
+        loadImage(msgSrc(message)),
+      ]);
+
+      // 用背景圖原生解像度，避免 upscale 變朦
+      const canvasW = bg.naturalWidth || 960;
+      const canvasH = bg.naturalHeight || 540;
+      const canvas = document.createElement('canvas');
+      canvas.width = canvasW;
+      canvas.height = canvasH;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.fillStyle = '#dff3ff';
+      ctx.fillRect(0, 0, canvasW, canvasH);
+      ctx.drawImage(bg, 0, 0, canvasW, canvasH);
+      ctx.drawImage(
+        msg,
+        layout.msg.left * canvasW,
+        layout.msg.top * canvasH,
+        layout.msg.width * canvasW,
+        layout.msg.height * canvasH
+      );
+      if (name) drawName(ctx, name, layout.name, canvasW, canvasH);
+      // 1.0 = 最高 JPEG 質素；文字邊緣仍清晰啲
+      return canvas.toDataURL('image/jpeg', 1.0);
+    }
+
+    function openDownloadPage(win, dataUrl, fileName) {
+      if (!win || win.closed) {
+        win = window.open('', '_blank');
+      }
+      if (!win) {
+        setStatus('請允許彈出視窗以下載圖片 / Please allow pop-ups to download the image', 'err');
+        return;
+      }
+      const safeName = fileName.replace(/[^\w.-]+/g, '_');
+      win.document.open();
+      win.document.write(`<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>儲存圖片 Save Image</title>
+  <style>
+    body { margin: 0; min-height: 100vh; background: #f0f7fc; color: #2b2b2b;
+      font-family: Arial, "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+      display: flex; flex-direction: column; align-items: center; padding: 24px 16px 40px; }
+    .notice { max-width: 640px; text-align: center; margin-bottom: 20px; line-height: 1.55; }
+    .notice strong { display: block; font-size: 20px; color: #0b4fc2; margin-bottom: 6px; }
+    .notice span { display: block; font-size: 16px; color: #334155; }
+    img { max-width: 100%; width: auto; height: auto; background: #fff;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12); image-rendering: auto; }
+    .actions { margin-top: 20px; display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+    a.btn, button.btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 200px; height: 48px; padding: 0 20px; border: 0; background: #1b8fc6;
+      color: #fff; font-size: 16px; font-weight: 700; text-decoration: none; cursor: pointer; }
+    a.btn:hover, button.btn:hover { background: #1679a8; }
+    button.secondary { background: #64748b; }
+    button.secondary:hover { background: #475569; }
+  </style>
+</head>
+<body>
+  <div class="notice">
+    <strong>請儲存此圖片到你的裝置</strong>
+    <span>Please save this image to your device</span>
+  </div>
+  <img id="preview" alt="Composed message" src="${dataUrl}" />
+  <div class="actions">
+    <a class="btn" id="download" download="${safeName}" href="${dataUrl}">下載圖片 Download JPG</a>
+    <button type="button" class="btn secondary" id="close-btn">關閉 Close</button>
+  </div>
+  <script>
+    document.getElementById('close-btn').onclick = function () { window.close(); };
+  <\/script>
+</body>
+</html>`);
+      win.document.close();
+    }
 
     // 同 Unity Text 嘅 Best Fit 類似：由大到細揀到放得落個框
     function fitName() {
@@ -263,6 +422,9 @@
       btn.disabled = true;
       setStatus('提交中…');
 
+      // 喺用戶手勢內先開空白頁，避免 popup blocker
+      const downloadWin = window.open('', '_blank');
+
       // Unity 用 0 起始 index：sticker_id 0 = Prefab[0]，msg_id 0 = Sprite[0]
       const body = {
         name,
@@ -270,6 +432,8 @@
         msg_id: String(state.message),
         optional_id: agentCode,
       };
+      const styleAtSubmit = state.style;
+      const messageAtSubmit = state.message;
 
       try {
         const res = await fetch('/api/messages/slot', {
@@ -280,11 +444,18 @@
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || '提交失敗');
 
-        setStatus('提交成功！訊息已推送到牆面。', 'ok');
+        const jpeg = await composeJpeg(name, styleAtSubmit, messageAtSubmit);
+        const fileName = `digital-wall-${agentCode || 'message'}.jpg`;
+        openDownloadPage(downloadWin, jpeg, fileName);
+
+        setStatus('提交成功！請於新分頁儲存圖片 / Submitted! Please save the image in the new tab.', 'ok');
         nameInput.value = '';
         agentInput.value = '';
+        setFieldError(nameInput, nameError, '');
+        setFieldError(agentInput, agentError, '');
         render();
       } catch (err) {
+        if (downloadWin && !downloadWin.closed) downloadWin.close();
         setStatus(err.message || '提交失敗', 'err');
       } finally {
         btn.disabled = false;
