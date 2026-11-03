@@ -168,6 +168,26 @@
           "response": []
         },
         {
+          "name": "GET Admin Export XLSX",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/admin/export.xlsx",
+            "description": "Download ALL messages as .xlsx. Requires JWT. In Postman: Send and Download."
+          },
+          "response": []
+        },
+        {
           "name": "GET Admin Messages (all)",
           "request": {
             "auth": {

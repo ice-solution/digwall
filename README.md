@@ -82,6 +82,7 @@ ADMIN_PASSWORD=admin123
 |--------|------|------|
 | GET | `/api/admin/messages?status=all\|slot\|displaying\|completed` | 訊息列表 |
 | GET | `/api/admin/stats` | 統計 |
+| GET | `/api/admin/export.xlsx` | 匯出全部訊息為 XLSX |
 
 ## 訊息狀態流程
 

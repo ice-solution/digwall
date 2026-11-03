@@ -64,7 +64,8 @@
         <button data-status="slot" class="filter-btn btn-secondary text-sm py-1.5 px-3">Slot</button>
         <button data-status="displaying" class="filter-btn btn-secondary text-sm py-1.5 px-3">Displaying</button>
         <button data-status="completed" class="filter-btn btn-secondary text-sm py-1.5 px-3">Completed</button>
-        <button id="refresh-btn" class="btn-secondary text-sm py-1.5 px-3 ml-auto">重新整理</button>
+        <button id="export-btn" class="btn-primary text-sm py-1.5 px-3 ml-auto">匯出 XLSX</button>
+        <button id="refresh-btn" class="btn-secondary text-sm py-1.5 px-3">重新整理</button>
       </div>
 
       <!-- Table -->
@@ -225,6 +226,44 @@
     });
 
     document.getElementById('refresh-btn').addEventListener('click', loadAll);
+
+    document.getElementById('export-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('export-btn');
+      btn.disabled = true;
+      const prev = btn.textContent;
+      btn.textContent = '匯出中…';
+      try {
+        const res = await fetch('/api/admin/export.xlsx', {
+          headers: { Authorization: `Bearer ${getToken()}` },
+        });
+        if (res.status === 401) {
+          clearToken();
+          showLogin();
+          throw new Error('Unauthorized');
+        }
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || '匯出失敗');
+        }
+        const blob = await res.blob();
+        const cd = res.headers.get('Content-Disposition') || '';
+        const match = cd.match(/filename="([^"]+)"/);
+        const filename = match ? match[1] : 'digital-wall-messages.xlsx';
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        alert(err.message || '匯出失敗');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = prev;
+      }
+    });
 
     document.querySelectorAll('.filter-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
